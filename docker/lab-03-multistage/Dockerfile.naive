@@ -1,0 +1,12 @@
+# Naive image — NOT for production use
+# Resulting size: ~900 MB
+FROM python:3.11
+
+WORKDIR /app
+
+COPY app/ .
+
+RUN pip install -r requirements.txt
+
+EXPOSE 5000
+CMD ["python", "app.py"]
