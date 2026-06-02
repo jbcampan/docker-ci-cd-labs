@@ -1,0 +1,39 @@
+services:
+
+  api:
+    build: ./app
+    container_name: lab01_api
+    ports:
+      - "${API_PORT:-5000}:5000"
+    environment:
+      REDIS_HOST: redis        # resolved by Compose's built-in DNS — no IP needed
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy   # wait for Redis to pass its healthcheck
+    networks:
+      - lab01_net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: lab01_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"   # exposed for local inspection; not required by api
+    volumes:
+      - redis_data:/data             # persist data across `docker compose down / up`
+    networks:
+      - lab01_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  lab01_net:
+    driver: bridge   # Compose creates this network automatically
+
+volumes:
+  redis_data:
