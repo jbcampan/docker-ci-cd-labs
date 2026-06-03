@@ -1,0 +1,16 @@
+# Production overrides — used explicitly with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d
+
+services:
+
+  web:
+    # No bind-mount in prod — image is the single source of truth
+    restart: unless-stopped
+    environment:
+      - DEBUG_MODE=false
+      - FLASK_ENV=production
+
+  db:
+    # Do NOT expose the DB port externally in production
+    ports: !reset []
+    restart: unless-stopped

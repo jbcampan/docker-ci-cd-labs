@@ -1,0 +1,20 @@
+# This file is automatically merged with docker-compose.yml when you run
+# `docker compose up` without specifying -f flags.
+# It exists solely for dev overrides — never deploy this file to production.
+
+services:
+
+  web:
+    # Bind-mount the source so code changes are reflected without rebuild
+    volumes:
+      - ./app:/app
+    # Override the default CMD to use Flask's dev server with reload
+    command: ["flask", "--app", "main", "run", "--host", "0.0.0.0", "--reload"]
+    environment:
+      - FLASK_ENV=development
+      - DEBUG_MODE=true
+
+  db:
+    # Expose DB port to localhost in dev — never do this in prod
+    ports:
+      - "5432:5432"

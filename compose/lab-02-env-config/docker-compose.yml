@@ -1,0 +1,55 @@
+services:
+
+  # ── Web application ──────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./app
+    # env_file loads the whole file; individual keys stay out of this YAML
+    env_file:
+      - .env
+    # environment can override or add specific keys on top of env_file
+    environment:
+      - APP_VERSION=${APP_VERSION}
+    ports:
+      - "${APP_PORT}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - dev
+      - prod
+
+  # ── Postgres database ────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    # environment block: explicit key=value — clearer for required vars
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - dev
+      - prod
+
+  # ── Adminer: DB GUI — dev only (no profile restriction here, override adds it) ─
+  adminer:
+    image: adminer:4
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
+    # This service is intentionally missing a profile so the override can add one
+    profiles:
+      - dev
+
+volumes:
+  db_data:
