@@ -1,0 +1,13 @@
+{
+  "name": "lab03-api",
+  "version": "1.0.0",
+  "description": "Express API connected to PostgreSQL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}
