@@ -1,0 +1,96 @@
+services:
+
+  # ── LocalStack ────────────────────────────────────────────────────────────────
+  # Emulates AWS S3 and SQS locally on port 4566 (the "Edge Port").
+  # Free-tier covers S3, SQS, IAM, SSM, and a dozen other services.
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: localstack
+    ports:
+      - "4566:4566"   # Edge Port — all AWS service calls go through here
+    environment:
+      - SERVICES=s3,sqs           # Only start the services we actually need
+      - DEBUG=0                   # Set to 1 for verbose LocalStack logs
+      - DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - LOCALSTACK_HOST=localstack # Internal hostname used by the health check
+    volumes:
+      - localstack_data:/var/lib/localstack   # Persist data between restarts
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Init ─────────────────────────────────────────────────────────────────────
+  # One-shot container: creates the S3 bucket and SQS queue, then exits.
+  # Uses `depends_on: localstack: condition: service_healthy` so it only runs
+  # once LocalStack is ready to accept requests.
+  init:
+    image: amazon/aws-cli:2.15.30
+    container_name: localstack-init
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+    volumes:
+      - ./scripts/init-aws.sh:/init-aws.sh:ro
+    entrypoint: ["/bin/bash", "/init-aws.sh"]
+    restart: "no"   # Run once and exit — not a long-lived service
+
+  # ── API ───────────────────────────────────────────────────────────────────────
+  # FastAPI app: exposes HTTP endpoints to upload files to S3 and enqueue SQS messages.
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: api
+    depends_on:
+      localstack:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=http://localstack:4566   # ← The magic: redirect SDK to LocalStack
+      - S3_BUCKET=${S3_BUCKET:-lab04-bucket}
+      - SQS_QUEUE_NAME=${SQS_QUEUE_NAME:-lab04-queue}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Worker ────────────────────────────────────────────────────────────────────
+  # Background consumer: polls SQS, processes messages, writes results to S3.
+  # Pattern: long-polling loop with visibility timeout to avoid duplicate processing.
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: worker
+    depends_on:
+      localstack:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - S3_BUCKET=${S3_BUCKET:-lab04-bucket}
+      - SQS_QUEUE_NAME=${SQS_QUEUE_NAME:-lab04-queue}
+      - POLL_WAIT_TIME=5          # SQS long-poll duration (seconds, max 20)
+      - VISIBILITY_TIMEOUT=30     # How long a message is hidden while being processed
+
+volumes:
+  localstack_data:
