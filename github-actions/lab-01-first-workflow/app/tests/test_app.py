@@ -21,7 +21,7 @@ def client():
 
 class TestAdd:
     def test_positive_integers(self):
-        assert add(2, 3) == 5
+        assert add(2, 3) == 99
 
     def test_negative_integers(self):
         # Testing the pure function directly — negative values are fine here.
