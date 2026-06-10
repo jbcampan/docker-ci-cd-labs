@@ -1,0 +1,106 @@
+name: CI — Matrix & Lint
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel any in-progress run for the same branch/PR when a new push arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Quality gate ─────────────────────────────────────────────────────────────
+  # Runs once (on the repo's default Python) before the matrix.
+  # Failing fast here avoids burning parallel minutes on a formatting issue.
+  lint:
+    name: Lint & Format check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install quality tools
+        run: pip install flake8==7.1.0 black==24.4.2
+
+      # flake8 checks for syntax errors, undefined names, and style violations.
+      # Exit code 1 if any issue is found → job fails.
+      - name: Run flake8
+        run: flake8 github-actions/lab-02-matrix-lint/app/
+
+      # black --check exits with code 1 if any file *would* be reformatted.
+      # It never modifies files in CI — it only acts as a gate.
+      - name: Run black (check mode)
+        run: black --check github-actions/lab-02-matrix-lint/app/
+
+  # ── Test matrix ──────────────────────────────────────────────────────────────
+  # Runs the test suite in parallel across every (os, python-version) combination.
+  test:
+    name: Test / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    # The lint job must pass before any test matrix job starts.
+    needs: lint
+
+    strategy:
+      # fail-fast: true  → if one combination fails, GitHub cancels the others.
+      # Set to false when you want full visibility across all combinations.
+      fail-fast: false
+
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The matrix variable is used here — each parallel job installs its own
+      # Python version independently.
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Cache pip wheels so repeated runs restore dependencies from cache
+      # instead of downloading from PyPI every time.
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          # Key includes the Python version so each matrix leg has its own cache.
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest github-actions/lab-02-matrix-lint/app/ --tb=short -v
+
+  # ── Summary job ──────────────────────────────────────────────────────────────
+  # A single job that depends on all matrix legs.  GitHub branch-protection rules
+  # can require this one job instead of each individual matrix combination.
+  all-tests-passed:
+    name: All tests passed
+    runs-on: ubuntu-latest
+    needs: test
+    # Always run so the badge stays green/red even when matrix jobs are skipped.
+    if: always()
+
+    steps:
+      - name: Check matrix result
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "One or more matrix jobs failed."
+            exit 1
+          fi
+          echo "All matrix jobs succeeded."
