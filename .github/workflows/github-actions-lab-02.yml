@@ -76,12 +76,12 @@ jobs:
         with:
           path: ~/.cache/pip
           # Key includes the Python version so each matrix leg has its own cache.
-          key: pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('github-actions/lab-02-matrix-lint/requirements.txt') }}
           restore-keys: |
             pip-${{ matrix.python-version }}-
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r github-actions/lab-02-matrix-lint/requirements.txt
 
       - name: Run pytest
         run: pytest github-actions/lab-02-matrix-lint/app/ --tb=short -v
