@@ -1,0 +1,108 @@
+name: Lab 04 - OIDC Authentication
+
+# ---------------------------------------------------------------------------
+# Trigger: manual dispatch + every push that touches lab-04 files
+# ---------------------------------------------------------------------------
+on:
+  push:
+    paths:
+      - "github-actions/lab-04-secrets-oidc/**"
+      - ".github/workflows/github-actions-lab-04.yml"
+  workflow_dispatch:
+
+# ---------------------------------------------------------------------------
+# OIDC permission - this is mandatory.
+# Without id-token: write, GitHub will NOT issue the OIDC JWT and
+# configure-aws-credentials will fail with a cryptic 403.
+# ---------------------------------------------------------------------------
+permissions:
+  id-token: write   # allow GitHub to mint an OIDC JWT for this workflow
+  contents: read    # allow checkout
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Job 1 - verify OIDC exchange works (runs only in "staging" environment)
+  # The "environment" key scopes the job to the GitHub environment.
+  # Only secrets defined under that environment are available here.
+  # Protection rules (required reviewers) are enforced at job start.
+  # -------------------------------------------------------------------------
+  verify-oidc:
+    name: Verify OIDC -> AWS identity
+    runs-on: ubuntu-24.04
+    environment: staging      # <- scopes secrets + triggers protection rules
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------------
+      # Core step: exchange the GitHub OIDC JWT for temporary AWS credentials
+      #
+      # What happens under the hood:
+      #   1. GitHub mints a signed JWT (id-token) for this workflow run
+      #   2. This action calls sts:AssumeRoleWithWebIdentity with that JWT
+      #   3. AWS validates the JWT signature against the OIDC provider thumbprint
+      #   4. AWS checks the "sub" claim matches the trust policy condition
+      #   5. STS returns short-lived credentials (valid 1 h) -> injected as env vars
+      #
+      # No AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY needed - ever.
+      # ----------------------------------------------------------------------
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          # Optional: tag the STS session for CloudTrail traceability
+          role-session-name: github-actions-lab04-${{ github.run_id }}
+
+      # ----------------------------------------------------------------------
+      # Proof: show the assumed identity (ARN injected by STS)
+      # Expected output:
+      #   UserId:  AROA...:<session-name>
+      #   Account: 123456789012
+      #   Arn:     arn:aws:sts::123456789012:assumed-role/github-actions-oidc-role/...
+      # ----------------------------------------------------------------------
+      - name: Verify assumed identity
+        run: |
+          echo "=== Assumed AWS identity ==="
+          aws sts get-caller-identity
+
+          echo ""
+          echo "=== Credentials are temporary (no long-term key in env) ==="
+          # AWS_ACCESS_KEY_ID starts with ASIA... for temporary credentials
+          # vs AKIA... for long-term access keys - this is a useful invariant to check
+          if [[ "${AWS_ACCESS_KEY_ID}" == ASIA* ]]; then
+            echo "✓ Key prefix is ASIA -> confirmed temporary STS credentials"
+          else
+            echo "✗ Unexpected key prefix: ${AWS_ACCESS_KEY_ID:0:4}" >&2
+            exit 1
+          fi
+
+      # ----------------------------------------------------------------------
+      # Show that environment secrets are available (masked in logs)
+      # ----------------------------------------------------------------------
+      - name: Show environment context
+        run: |
+          echo "=== GitHub context ==="
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Environment: ${{ github.environment }}"
+          echo "Run ID     : ${{ github.run_id }}"
+          echo ""
+          echo "AWS_REGION from environment secret: ${{ secrets.AWS_REGION }}"
+          echo "(AWS_ROLE_ARN is masked and will not print)"
+
+      # ----------------------------------------------------------------------
+      # Demonstrate that credentials expire (informational)
+      # ----------------------------------------------------------------------
+      - name: Show credential expiry
+        run: |
+          echo "=== STS session token metadata ==="
+          # AWS_SESSION_TOKEN is set by configure-aws-credentials for temp creds
+          if [ -n "${AWS_SESSION_TOKEN}" ]; then
+            echo "✓ AWS_SESSION_TOKEN is set -> temporary credentials confirmed"
+            echo "  Credentials expire in ~1 hour from job start"
+          else
+            echo "✗ AWS_SESSION_TOKEN missing - something is wrong"
+            exit 1
+          fi

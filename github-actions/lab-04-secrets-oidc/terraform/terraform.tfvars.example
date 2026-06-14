@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is git-ignored — never commit real values.
+
+github_org         = "your-github-username-or-org"
+github_repo        = "docker-cicd-labs"
+github_environment = "staging"
+aws_region         = "eu-west-3"
+role_name          = "github-actions-oidc-role"
