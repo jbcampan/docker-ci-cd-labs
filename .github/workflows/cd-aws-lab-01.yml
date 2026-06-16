@@ -1,0 +1,122 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Lab cd-aws-01 — Test → Build → Push to ECR
+# Triggered on every push to main that touches the lab or this workflow file.
+# ──────────────────────────────────────────────────────────────────────────────
+name: cd-aws-lab-01 · ECR push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cd-aws/lab-01-ecr-push/**"
+      - ".github/workflows/cd-aws-lab-01.yml"
+  workflow_dispatch: # allow manual trigger from the Actions UI
+
+# Permissions required for OIDC token issuance
+permissions:
+  contents: read
+  id-token: write # GitHub must mint an OIDC token so AWS can verify identity
+
+env:
+  AWS_REGION: eu-west-1        # keep in sync with your terraform.tfvars
+  ECR_REPO_NAME: cd-aws-lab-01 # keep in sync with var.ecr_repo_name
+
+jobs:
+  # ── Job 1: run tests ────────────────────────────────────────────────────────
+  test:
+    name: Run pytest
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: cd-aws/lab-01-ecr-push
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: cd-aws/lab-01-ecr-push/app/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Run tests
+        run: pytest app/test_main.py -v
+
+  # ── Job 2: build + push to ECR ──────────────────────────────────────────────
+  push-to-ecr:
+    name: Build & push image
+    runs-on: ubuntu-24.04
+    needs: test # only runs if tests pass
+
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+      commit_sha: ${{ steps.meta.outputs.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Derive image tags from git metadata ──────────────────────────────
+      - name: Compute image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # ── Assume AWS role via OIDC (no long-lived credentials) ─────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── Authenticate Docker to ECR ────────────────────────────────────────
+      # aws ecr get-login-password returns a short-lived token (12 h).
+      # It is piped directly to docker login — the password never touches disk.
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Build, tag, and push ──────────────────────────────────────────────
+      - name: Build and push Docker image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA_TAG: ${{ steps.meta.outputs.sha_tag }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${{ env.ECR_REPO_NAME }}"
+
+          docker build \
+            --tag "${IMAGE_URI}:${SHA_TAG}" \
+            --tag "${IMAGE_URI}:latest" \
+            --file cd-aws/lab-01-ecr-push/Dockerfile \
+            cd-aws/lab-01-ecr-push
+
+          docker push "${IMAGE_URI}:${SHA_TAG}"
+          docker push "${IMAGE_URI}:latest"
+
+          echo "image_uri=${IMAGE_URI}:${SHA_TAG}" >> "$GITHUB_OUTPUT"
+
+      # ── Summary visible in the Actions UI ────────────────────────────────
+      - name: Write job summary
+        env:
+          SHA_TAG: ${{ steps.meta.outputs.sha_tag }}
+          IMAGE_URI: ${{ steps.build.outputs.image_uri }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## ✅ ECR Push — Lab cd-aws-01
+
+          | Field        | Value |
+          |-------------|-------|
+          | Commit SHA  | \`${{ github.sha }}\` |
+          | Image tag   | \`${SHA_TAG}\` |
+          | Image URI   | \`${IMAGE_URI}\` |
+          | Also tagged | \`latest\` |
+          EOF

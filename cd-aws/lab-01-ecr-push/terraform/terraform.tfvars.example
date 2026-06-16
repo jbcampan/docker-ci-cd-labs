@@ -1,0 +1,4 @@
+aws_region    = "eu-west-3"
+ecr_repo_name = "cd-aws-lab-01"
+github_org    = "YOUR_GITHUB_USERNAME_OR_ORG"
+github_repo   = "docker-ci-cd-labs"

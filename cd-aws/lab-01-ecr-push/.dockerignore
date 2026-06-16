@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/*.tfvars
+
+# Git
+.git/
+.gitignore
+
+# CI
+.github/
+
+# Docs
+README.md
+*.md
+
+# Tests (not needed in image)
+app/test_*.py
