@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+aws_region   = "eu-west-3"
+project      = "ecs-lab02"
+environment  = "lab"
+github_repo  = "your-github-username/docker-ci-cd-labs"

@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Terraform state & secrets
+terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform/
+
+# GitHub Actions (not needed inside the image)
+.github/
+
+# Environment files (secrets must never end up in the image)
+.env
+.env.*
+!.env.example
+
+# Documentation
+README.md
+docs/
+
+# Editor / OS artifacts
+.DS_Store
+*.swp
+.idea/
+.vscode/
