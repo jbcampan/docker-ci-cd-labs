@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Staging-specific variable values.
+# Apply with: terraform apply -var-file=staging.tfvars
+# ---------------------------------------------------------------------------
+
+aws_region  = "eu-west-3"
+project     = "ecs-lab03-staging"
+environment = "staging"
+app_version = "latest"
+
+# Same VPC CIDR is fine here since staging and production are two entirely
+# separate VPCs (no peering) — no risk of overlap causing issues.
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+
+# Identical sizing to production on purpose for this lab — see README.
+task_cpu       = 256
+task_memory    = 512
+desired_count  = 1
+container_port = 5000
+
+health_check_path = "/health"
+
+# ⚠️ Replace with your own values before applying.
+github_repo    = "your-github-username/docker-ci-cd-labs"
+tfstate_bucket = "REPLACE_WITH_BOOTSTRAP_BUCKET_NAME"
+
+

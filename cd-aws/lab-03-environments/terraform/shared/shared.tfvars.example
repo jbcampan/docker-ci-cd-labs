@@ -1,0 +1,10 @@
+# ---------------------------------------------------------------------------
+# Shared module — applied ONCE before staging or production.
+# Apply with: terraform apply -var-file=shared.tfvars
+# ---------------------------------------------------------------------------
+
+aws_region = "eu-west-3"
+project    = "ecs-lab03"
+
+# ⚠️ Replace with your own values before applying.
+github_repo = "your-github-username/docker-ci-cd-labs"
