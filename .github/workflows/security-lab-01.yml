@@ -1,0 +1,112 @@
+name: "Security Lab 01 — Trivy Image Scan"
+
+on:
+  push:
+    paths:
+      - "security/lab-01-trivy-scan/**"
+      - ".github/workflows/security-lab-01.yml"
+  pull_request:
+    paths:
+      - "security/lab-01-trivy-scan/**"
+      - ".github/workflows/security-lab-01.yml"
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+env:
+  IMAGE_NAME: security-lab-01
+  LAB_DIR: security/lab-01-trivy-scan
+
+jobs:
+  build-and-scan:
+    name: Build & Trivy Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read         # checkout
+      security-events: write # upload SARIF to GitHub Security tab
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Build ─────────────────────────────────────────────────────────────
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            "${{ env.LAB_DIR }}"
+
+      # ── 3. Scan — SARIF report (all severities, never blocks) ────────────────
+      # Runs first so the full report is always available in GitHub Security,
+      # even when the blocking step (step 5) causes the job to fail.
+      - name: Trivy scan — generate SARIF report (all severities)
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"               # report only — never blocks
+          ignore-unfixed: false        # include CVEs without an available patch
+          vuln-type: "os,library"      # scan OS packages + app dependencies (pip, npm…)
+          severity: "CRITICAL,HIGH,MEDIUM,LOW"
+          trivyignores: "${{ env.LAB_DIR }}/.trivyignore"
+
+      # ── 4. Upload SARIF → GitHub Security tab ────────────────────────────────
+      # if: always() ensures the report is uploaded even when step 5 fails.
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image-scan # label shown in the Security tab
+
+      # ── 5. Scan — block on CRITICAL ──────────────────────────────────────────
+      # exit-code 1 → job fails here if any CRITICAL CVE is found.
+      # Steps 6 and 7 (warn + push) are therefore never reached.
+      - name: Trivy scan — block on CRITICAL CVEs
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: table
+          exit-code: "1"               # ← pipeline stops here on CRITICAL
+          ignore-unfixed: false
+          vuln-type: "os,library"
+          severity: "CRITICAL"
+          trivyignores: "${{ env.LAB_DIR }}/.trivyignore"
+
+      # ── 6. Scan — warn on HIGH (does not block) ──────────────────────────────
+      # Only runs when step 5 passed (zero CRITICAL found).
+      - name: Trivy scan — warn on HIGH CVEs
+        if: success()
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: table
+          exit-code: "0"               # logs HIGH findings, pipeline continues
+          ignore-unfixed: false
+          vuln-type: "os,library"
+          severity: "HIGH"
+          trivyignores: "${{ env.LAB_DIR }}/.trivyignore"
+
+      # ── 7. Push to ECR (placeholder — gated behind successful scan) ──────────
+      # Uncomment and configure when AWS credentials are set up (cd-aws labs).
+      # This block is unreachable if step 5 returned exit-code 1.
+      #
+      # - name: Configure AWS credentials
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ vars.AWS_REGION }}
+      #
+      # - name: Login to Amazon ECR
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   uses: aws-actions/amazon-ecr-login@v2
+      #
+      # - name: Push image to ECR
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   run: |
+      #     docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+      #       "${{ vars.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+      #     docker push \
+      #       "${{ vars.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"

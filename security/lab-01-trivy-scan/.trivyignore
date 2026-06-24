@@ -1,0 +1,32 @@
+# =============================================================================
+# .trivyignore — Trivy CVE suppressions (false positives / accepted risks)
+# =============================================================================
+#
+# FORMAT
+# ──────
+# One CVE-ID per line.  Lines starting with '#' are comments.
+# Each active suppression MUST document:
+#   • Why the CVE is not exploitable or acceptable in this context
+#   • Who reviewed it and on what date
+#   • When the decision should be revisited
+#
+# GOVERNANCE
+# ──────────
+# This file is version-controlled and reviewed at every base image update.
+# Adding an entry here is a deliberate security decision, not a quick fix.
+# Prefer updating the base image or a dependency over adding suppressions.
+#
+# EXAMPLE FORMAT (do not uncomment without a real review)
+# ────────────────────────────────────────────────────────
+# CVE-2023-36617
+# ^ urllib ReDoS — only triggered by malformed URLs from untrusted input.
+#   This app does not accept user-supplied URLs.
+#   Reviewed: Alice, 2024-06-01 | Revisit: next base image bump.
+#
+# CVE-2023-29383
+# ^ shadow-utils — requires local shell access to exploit.
+#   Container runs as non-root; no shell exposed to untrusted users.
+#   Reviewed: Bob, 2024-06-15 | Revisit: Q3 2024.
+# ────────────────────────────────────────────────────────
+#
+# Active suppressions (add below after security review):

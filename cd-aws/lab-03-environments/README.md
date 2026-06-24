@@ -1,9 +1,5 @@
 # Lab 03 — GitHub Environments: Staging / Production
 
-[![CD — ECS Deploy](https://github.com/jbcampan/docker-ci-cd-labs/actions/workflows/cd-aws-lab-03.yml/badge.svg)](https://github.com/jbcampan/docker-ci-cd-labs/actions/workflows/cd-aws-lab-03.yml)
-
----
-
 ## Objective
 
 Differentiate staging and production in the CD pipeline. Staging deploys

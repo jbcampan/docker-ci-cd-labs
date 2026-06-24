@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+.github/
+
+# Documentation
+README.md
+
+# Alternate Dockerfile (not needed at build time)
+Dockerfile.fixed
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Trivy artifacts (generated at CI time, not needed in image)
+.trivyignore
+trivy-results.sarif
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
