@@ -1,21 +1,19 @@
 # =============================================================================
-# DOCKERFILE — INTENTIONALLY VULNERABLE  (Lab 01 · Phase A)
+# DOCKERFILE — FIXED  (Lab 01 · Phase B)
 # =============================================================================
-# Base image : python:3.8-slim-buster  (Debian Buster, EOL June 2022)
-# Purpose    : trigger Trivy CRITICAL findings and observe pipeline blocking.
+# Base image : python:3.13-slim  (Debian Bookworm, actively maintained)
+# Purpose    : validate that the pipeline turns green after base image update.
 #
-# Expected scan result : multiple CRITICAL CVEs in the OS layer
-#                        (glibc, zlib, openssl, …)
-# Pipeline behaviour   : job fails at step "Trivy scan — block on CRITICAL CVEs"
-#                        SARIF report is still uploaded (if: always())
+# Expected scan result : few or zero CRITICAL CVEs
+# Pipeline behaviour   : scan passes → HIGH warning step runs → push unlocked
 #
-# ── To move to Phase B (green pipeline): ─────────────────────────────────────
+# ── To activate: ─────────────────────────────────────────────────────────────
 #   cp Dockerfile.fixed Dockerfile
 #   git add Dockerfile
 #   git commit -m "fix(security): update base image to python:3.13-slim"
 # =============================================================================
 
-FROM python:3.8-slim-buster
+FROM python:3.13-slim
 
 WORKDIR /app
 

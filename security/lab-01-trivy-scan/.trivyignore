@@ -30,3 +30,17 @@
 # ────────────────────────────────────────────────────────
 #
 # Active suppressions (add below after security review):
+
+CVE-2026-42496
+^ perl-archive-tar path traversal via crafted symlinks.
+  Affects perl-base shipped in Debian 13.5 base image.
+  No exploit path in this container: application does not process untrusted archives or symlinks.
+  No fixed version available in current Debian repositories at time of review.
+  Reviewed: Lab author, 2026-06-24 | Revisit: next base image update.
+
+CVE-2026-8376
+^ Perl heap buffer overflow during compilation of specific constructs.
+  Affects perl-base in Debian 13.5 slim image.
+  Container does not execute untrusted Perl code or compile external Perl modules at runtime.
+  No upstream patched package available at time of review.
+  Reviewed: Lab author, 2026-06-24 | Revisit: next base image update.
