@@ -39,7 +39,7 @@ jobs:
       # Runs first so the full report is always available in GitHub Security,
       # even when the blocking step (step 5) causes the job to fail.
       - name: Trivy scan — generate SARIF report (all severities)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           format: sarif
@@ -63,7 +63,7 @@ jobs:
       # exit-code 1 → job fails here if any CRITICAL CVE is found.
       # Steps 6 and 7 (warn + push) are therefore never reached.
       - name: Trivy scan — block on CRITICAL CVEs
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           format: table
@@ -77,7 +77,7 @@ jobs:
       # Only runs when step 5 passed (zero CRITICAL found).
       - name: Trivy scan — warn on HIGH CVEs
         if: success()
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           format: table
