@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in real values.
+# terraform.tfvars is git-ignored — never commit real secrets.
+
+aws_region   = "eu-west-3"
+project_name = "docker-cicd-labs"
+
+# Format: owner/repo  (no https://, no github.com/)
+github_repo = "your-github-username/docker-ci-cd-labs"
+
+# These are the INITIAL values seeded into Secrets Manager.
+# After the first apply, the rotation Lambda manages future versions.
+db_connection_string = "postgresql://user:CHANGE_ME@db.example.com:5432/mydb"
+third_party_api_key  = "sk-CHANGE_ME"

@@ -1,0 +1,177 @@
+name: security-lab-02 — OIDC + Secrets Manager
+
+# Trigger: push to main or manual dispatch only.
+# A pull_request trigger is intentionally absent:
+#   PR tokens have sub = "repo:<owner>/<repo>:pull_request"
+#   which does NOT match the OIDC condition "ref:refs/heads/main" → access denied.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "security/lab-02-secrets-mgmt/**"
+      - ".github/workflows/security-lab-02.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Skip the Docker run step (build + secret fetch only)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+# ---------------------------------------------------------------------------
+# Permissions — request an OIDC token for AWS authentication.
+# All other permissions default to none (explicit deny).
+# ---------------------------------------------------------------------------
+permissions:
+  id-token: write   # Required to request the OIDC JWT from GitHub
+  contents: read    # Required to checkout the repository
+
+env:
+  AWS_REGION: eu-west-3
+  # Secret name is configuration, not a secret — safe as an env var.
+  # The actual secret VALUE is never stored anywhere in the workflow.
+  APP_SECRET_NAME: docker-cicd-labs/prod/app-credentials
+
+jobs:
+  demo-oidc-secrets:
+    name: OIDC → Secrets Manager → Container
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Authenticate to AWS via OIDC — zero static credentials
+      #
+      # aws-actions/configure-aws-credentials exchanges the GitHub OIDC JWT
+      # (issued for this specific run, repo, and branch) for temporary STS
+      # credentials valid for 1 hour.
+      #
+      # Why this is secure:
+      #   - No AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY stored in GitHub Secrets
+      #   - The IAM role trust policy enforces:
+      #       aud = sts.amazonaws.com
+      #       sub = repo:<owner>/<repo>:ref:refs/heads/main
+      #   - A PR token (sub ends with :pull_request) is rejected by IAM
+      #   - Credentials expire automatically — no rotation burden
+      # -----------------------------------------------------------------------
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          # AWS_OIDC_ROLE_ARN is the ARN of the IAM role output by Terraform.
+          # It IS safe to store in GitHub Secrets (it's not a credential),
+          # but we use Secrets to avoid hard-coding account IDs in the workflow.
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-security-lab-02
+
+      # -----------------------------------------------------------------------
+      # 3. Verify the assumed identity (optional — useful for debugging)
+      # -----------------------------------------------------------------------
+      - name: Verify assumed role identity
+        run: |
+          echo "=== Assumed role identity ==="
+          aws sts get-caller-identity
+          echo "================================"
+
+      # -----------------------------------------------------------------------
+      # 4. Pull secret from Secrets Manager into a masked step output
+      #
+      # The secret value is:
+      #   - fetched with aws secretsmanager get-secret-value
+      #   - stored in a step output (not an env var)
+      #   - masked via ::add-mask:: so it never appears in logs
+      #   - passed to the Docker container via --env flags (in-memory only)
+      #
+      # The JSON is parsed with jq to extract individual fields.
+      # -----------------------------------------------------------------------
+      - name: Fetch secret from Secrets Manager
+        id: fetch_secret
+        run: |
+          echo "Fetching secret: ${{ env.APP_SECRET_NAME }}"
+
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "${{ env.APP_SECRET_NAME }}" \
+            --query SecretString \
+            --output text)
+
+          # Extract individual fields
+          DB_CONN=$(echo "$SECRET_JSON" | jq -r '.db_connection_string')
+          API_KEY=$(echo "$SECRET_JSON"  | jq -r '.third_party_api_key')
+
+          # Mask both values — GitHub Actions will redact them in all future log lines
+          echo "::add-mask::$DB_CONN"
+          echo "::add-mask::$API_KEY"
+
+          # Write to step outputs (not env vars) — scoped to this job
+          echo "db_conn=$DB_CONN" >> "$GITHUB_OUTPUT"
+          echo "api_key=$API_KEY" >> "$GITHUB_OUTPUT"
+
+          echo "Secret fetched and masked successfully"
+
+      # -----------------------------------------------------------------------
+      # 5. Build the Docker image
+      # -----------------------------------------------------------------------
+      - name: Build Docker image
+        working-directory: security/lab-02-secrets-mgmt
+        run: |
+          docker build \
+            --tag secrets-demo:${{ github.sha }} \
+            --tag secrets-demo:latest \
+            --file Dockerfile \
+            .
+
+      # -----------------------------------------------------------------------
+      # 6. Run the container with secrets injected in-memory
+      #
+      # --env flags pass the secret VALUES directly to the container process.
+      # They are NOT written to disk, not stored in image layers, not printed.
+      # The container itself reads them from os.environ (or in the Python app,
+      # the app fetches fresh from Secrets Manager using the injected AWS creds).
+      #
+      # Two approaches demonstrated here:
+      #   A) Pass raw values via --env (simplest — used here for illustration)
+      #   B) Let the container call boto3 itself using the role credentials
+      #      (preferred in production — the app/main.py demonstrates this path)
+      # -----------------------------------------------------------------------
+      - name: Run container (approach A — env injection demo)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          docker run --rm \
+            --env APP_SECRET_NAME="${{ env.APP_SECRET_NAME }}" \
+            --env AWS_REGION="${{ env.AWS_REGION }}" \
+            --env AWS_ACCESS_KEY_ID="${{ env.AWS_ACCESS_KEY_ID }}" \
+            --env AWS_SECRET_ACCESS_KEY="${{ env.AWS_SECRET_ACCESS_KEY }}" \
+            --env AWS_SESSION_TOKEN="${{ env.AWS_SESSION_TOKEN }}" \
+            secrets-demo:${{ github.sha }}
+        # The AWS_* env vars above are the TEMPORARY STS credentials injected
+        # by configure-aws-credentials into the runner environment.
+        # They expire in 1 hour and cannot be reused outside this job.
+
+      # -----------------------------------------------------------------------
+      # 7. Audit summary — what gets logged in CloudTrail
+      # -----------------------------------------------------------------------
+      - name: Print audit summary
+        run: |
+          echo "=== Audit summary ==="
+          echo "Every GetSecretValue call above is recorded in CloudTrail with:"
+          echo "  - Event name  : GetSecretValue"
+          echo "  - Secret ARN  : (your secret ARN)"
+          echo "  - Principal   : arn:aws:sts::<account>:assumed-role/<role>/<session>"
+          echo "  - Source IP   : GitHub Actions runner IP"
+          echo "  - Timestamp   : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+          echo "Query in CloudTrail → Event history → Filter by event name GetSecretValue"
+          echo "=============================="
+
+      # -----------------------------------------------------------------------
+      # 8. Cleanup — remove local image
+      # -----------------------------------------------------------------------
+      - name: Remove local Docker image
+        if: always()
+        run: docker rmi secrets-demo:${{ github.sha }} secrets-demo:latest || true
